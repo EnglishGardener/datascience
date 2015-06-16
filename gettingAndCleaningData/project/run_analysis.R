@@ -85,7 +85,7 @@ for(i in 1:NumSubject) {
       }
 }
 head(result)
-write.table(result, "dataset_with_means.txt") # write out the 2nd dataset
+write.table(result, row.names= FALSE, "dataset_with_means.txt") # write out the 2nd dataset
 
 #data <- read.table("./dataset_with_means.txt")
 #dim(data) # 180 * 68
