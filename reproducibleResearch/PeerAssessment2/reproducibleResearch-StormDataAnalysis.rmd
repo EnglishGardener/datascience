@@ -1,0 +1,164 @@
+---
+title: "Reproducible Research Peer Assessment 2 - Storm Data Analysis"
+author: "English Gardener"
+date: "June 19, 2015"
+output: html_document
+---
+
+## Evaluate the Impact of Severe Weather Events on Public Health and Economy in USA
+
+### Synonpsis  
+In this report, we aim to analyze the impact of different weather events on public health and economy based on the storm database collected from the U.S. National Oceanic and Atmospheric Administration's (NOAA) from 1950 - 2011. We will use the estimates of fatalities, injuries, property and crop damage to decide which types of event are most harmful to the population health and economy. From these data, we found that excessive heat and tornado are most harmful with respect to population health, while flood, drought, and hurricane/typhoon have the greatest economic consequences.
+
+### Basic settings
+```{r, warning=FALSE, message=FALSE}
+setwd("~/datascience/reproducibleResearch/PeerAssessment2")
+echo = TRUE  
+options(scipen = 1)  # Turn off scientific notations for numbers
+library(R.utils)
+library(ggplot2)
+library(plyr)
+require(gridExtra)
+```
+
+### Data Processing
+First, we download the data file and unzip it. The data used in this study is downloaded from this [link](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2) provided in the course website. You can find how the some of the variables are constructed/defined in the site of National Weather Service [Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf). The events in the database start in the year 1950 and end in November 2011. In the earlier years of the database there are generally fewer events recorded, most likely due to a lack of good records. More recent years should be considered more complete.
+
+```{r, warning=FALSE}
+if (!"StormData.csv.bz2" %in% dir()) {
+      download.file("http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv#.bz2", destfile = "StormData.csv.bz2")
+}
+if (!"StormData.csv" %in% dir()) {
+      bunzip2("./StormData.csv.bz2", overwrite=T, remove=F)
+}
+```
+Then, we read the csv file generated. We check whether the data already loaded in the current environment. If it already exists, we skip the step of loading data. Otherwise, we read the csv file.
+```{r, cache=TRUE}
+if(!"data" %in% ls()){
+      data<-read.csv("StormData.csv", sep=",")      
+}
+dim(data)
+head(data, n = 3)
+```
+There are `r nrow(data)` rows and `r ncol(data)` columns in total.
+
+To answer the questions 1 and 2, we first subset the data include only the features relevant to: health, economic impact, weather event. 
+```{r, cache=TRUE}
+selectcol <- c("EVTYPE", "FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP", "CROPDMG", 
+           "CROPDMGEXP")
+subdata<-data[selectcol]
+dim(subdata) 
+head(subdata, n =3)
+```
+
+Now, this subset of the Storm Data has in total `r nrow(subdata)` rows and `r ncol(subdata)` columns. 
+
+#### Impact on Public Health
+In this section, we compute the number of **fatalities** and **injuries** that are caused by the severe weather events from the post-processed dataset. We compute the aggregated fatalities and the aggregated injuries with regard to the storm weather event type as follows. 
+```{r}
+fatal <- aggregate(FATALITIES ~ EVTYPE, data = subdata, FUN = sum)
+injury <- aggregate(INJURIES ~ EVTYPE, data = subdata, FUN=sum)
+```
+        
+#### Impact on Economy
+To evaluate the impact of severe weather events on economy, we first convert the **property damage** and **crop damage** data into comparable numerical types according to the meaning of units described in the Storm Data Documentation. Both `PROPDMGEXP` and `CROPDMGEXP` columns record a multiplier for each observation with H/h for Hundred, K/k for Thousand, M/m for Million and B/b for Billion. 
+
+```{r, cache=TRUE}
+str(subdata$PROPDMGEXP) 
+unique(subdata$PROPDMGEXP)
+
+# map the property exponent data to the corresponding scales. 
+subdata$PROPEXP[subdata$PROPDMGEXP == "K"] <- 1000
+subdata$PROPEXP[subdata$PROPDMGEXP == "M"] <- 1e+06
+subdata$PROPEXP[subdata$PROPDMGEXP == ""] <- 1
+subdata$PROPEXP[subdata$PROPDMGEXP == "B"] <- 1e+09
+subdata$PROPEXP[subdata$PROPDMGEXP == "m"] <- 1e+06
+subdata$PROPEXP[subdata$PROPDMGEXP == "0"] <- 1
+subdata$PROPEXP[subdata$PROPDMGEXP == "5"] <- 1e+05
+subdata$PROPEXP[subdata$PROPDMGEXP == "6"] <- 1e+06
+subdata$PROPEXP[subdata$PROPDMGEXP == "4"] <- 10000
+subdata$PROPEXP[subdata$PROPDMGEXP == "2"] <- 100
+subdata$PROPEXP[subdata$PROPDMGEXP == "3"] <- 1000
+subdata$PROPEXP[subdata$PROPDMGEXP == "h"] <- 100
+subdata$PROPEXP[subdata$PROPDMGEXP == "7"] <- 1e+07
+subdata$PROPEXP[subdata$PROPDMGEXP == "H"] <- 100
+subdata$PROPEXP[subdata$PROPDMGEXP == "1"] <- 10
+subdata$PROPEXP[subdata$PROPDMGEXP == "8"] <- 1e+08
+# assign 0 to invalid exponent data
+subdata$PROPEXP[subdata$PROPDMGEXP == "+"] <- 0
+subdata$PROPEXP[subdata$PROPDMGEXP == "-"] <- 0
+subdata$PROPEXP[subdata$PROPDMGEXP == "?"] <- 0
+```
+
+We then compute the value of the property damage from PROPDMG and the newly mapped PROPEXP as follows. 
+```{r, cache=TRUE}
+subdata$PROPDMGVAL <- subdata$PROPDMG * subdata$PROPEXP
+```
+
+The same mapping is performed for the CROPDMGEXP data as follows. A new variable CROPDMGVAL is created to record the value of crop damages calculated from CROPDMG and CROPEXP.
+```{r, cache=TRUE}
+str(subdata$CROPDMGEXP) 
+unique(subdata$CROPDMGEXP) 
+#map the CROPDMGEXP data to their corresponding scales
+subdata$CROPEXP[subdata$CROPDMGEXP == "M"] <- 1e+06
+subdata$CROPEXP[subdata$CROPDMGEXP == "K"] <- 1000
+subdata$CROPEXP[subdata$CROPDMGEXP == "m"] <- 1e+06
+subdata$CROPEXP[subdata$CROPDMGEXP == "B"] <- 1e+09
+subdata$CROPEXP[subdata$CROPDMGEXP == "0"] <- 1
+subdata$CROPEXP[subdata$CROPDMGEXP == "k"] <- 1000
+subdata$CROPEXP[subdata$CROPDMGEXP == "2"] <- 100
+subdata$CROPEXP[subdata$CROPDMGEXP == ""] <- 1
+# assign 0 to invalid exponent data
+subdata$CROPEXP[subdata$CROPDMGEXP == "?"] <- 0
+# compute the value of the crop damage
+subdata$CROPDMGVAL <- subdata$CROPDMG * subdata$CROPEXP
+```
+
+We next compute the aggregated PROPDMGVAL and the aggregated CROPDMGVAL with regard to the storm weather event type EVTYPE. 
+```{r}
+PropDmgValue <- aggregate(PROPDMGVAL ~ EVTYPE, data = subdata, FUN = sum)
+CropDmgValue <- aggregate(CROPDMGVAL ~ EVTYPE, data = subdata, FUN = sum)
+```
+
+
+### Results
+
+#### Impact on Public Health
+
+we order the weather events that lead to the top 10 highest fatalities and top 10 highest injuries respectively. We plot the results in bar charts for both groups below. 
+
+```{r}
+fatalTop10<-fatal[order(-fatal$FATALITIES), ][1:10, ]
+injuryTop10<-injury[order(-injury$INJURIES),][1:10, ]
+
+par(mfrow = c(1, 2), mar = c(12, 4, 3, 2), mgp = c(3, 1, 0), cex = 0.7)
+barplot(fatalTop10$FATALITIES, las = 3, names.arg = fatalTop10$EVTYPE, main = "Weather Events With Top 10 Highest Fatalities", 
+        ylab = "number of fatalities", col = "red")
+barplot(injuryTop10$INJURIES, las = 3, names.arg = injuryTop10$EVTYPE, main = "Weather Events With Top 10 Highest Injuries", 
+        ylab = "number of injuries", col = "red")
+```
+  
+Based on the figure shown above, we find that **tornado** and **excessive heat** cause most fatalities, **tornato** causes most injuries in the United States from 1950 to 2011.
+
+#### Impact on Economy
+We find the top 10 events with highest property damage and the top 10 events with highest value of crop damage, and plot the bar charts to display both of them. 
+```{r}
+PropDmgValue <- aggregate(PROPDMGVAL ~ EVTYPE, data = subdata, FUN = sum)
+CropDmgValue <- aggregate(CROPDMGVAL ~ EVTYPE, data = subdata, FUN = sum)
+
+Top10PropDmgVal <- PropDmgValue[order(-PropDmgValue$PROPDMGVAL), ][1:10, ]
+Top10CropDmgVal <- CropDmgValue[order(-CropDmgValue$CROPDMGVAL), ][1:10, ]
+
+par(mfrow = c(1, 2), mar = c(12, 4, 3, 2), mgp = c(3, 1, 0), cex = 0.7)
+barplot(Top10PropDmgVal$PROPDMGVAL/(10^9), las = 3, names.arg = Top10PropDmgVal$EVTYPE, 
+        main = "Top 10 Events with Greatest Property Damages", ylab = "Cost of damages ($ billions)", 
+        col = "red")
+barplot(Top10CropDmgVal$CROPDMGVAL/(10^9), las = 3, names.arg = Top10CropDmgVal$EVTYPE, 
+        main = "Top 10 Events With Greatest Crop Damages", ylab = "Cost of damages ($ billions)", 
+        col = "red")
+```
+
+Based on the figures shown above, we find that **flood** and **hurricane/typhoon** cause most property damage; **drought** and **flood** causes most crop damage in the United States from 1950 to 2011.
+
+### Conclusion  
+Based on the analysis presented above, we conclude that **excessive heat** and **tornado** are most harmful to the public health than other storm events. We also conclude that **flood**, **hurricane/typhoon** and **drought** cause the worst economic damages shown in the Storm Data set.
